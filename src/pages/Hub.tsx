@@ -12,9 +12,11 @@ import { Plus, ChevronRight, FileText } from 'lucide-react';
 import { mockCategories } from '@/data/mockData';
 import { Category } from '@/types';
 import { useArticles, Article } from '@/hooks/use-articles';
+import { useProfile } from '@/hooks/use-profile';
 
 export default function Hub() {
   const { getApprovedArticles, getUserArticles } = useArticles();
+  const { profile } = useProfile();
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isMyArticlesOpen, setIsMyArticlesOpen] = useState(false);
@@ -102,8 +104,8 @@ export default function Hub() {
     setMyArticles(data);
   };
 
-  return (
-    profile?.is_blocked ? (
+  if (profile?.is_blocked) {
+    return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
         <div className="text-center p-8">
           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-destructive/20 flex items-center justify-center">
@@ -114,7 +116,10 @@ export default function Hub() {
           <p className="text-sm text-muted-foreground">Если вы считаете, что это ошибка, обратитесь в поддержку.</p>
         </div>
       </div>
-    ) : (
+    );
+  }
+
+  return (
     <div className="min-h-screen bg-background pb-24 pt-16">
       <Header />
 

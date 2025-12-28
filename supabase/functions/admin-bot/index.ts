@@ -916,6 +916,11 @@ async function handleViewArticle(callbackQuery: any, articleShortId: string) {
     .eq('id', articleId)
     .maybeSingle();
 
+  if (error || !article) {
+    await answerCallbackQuery(id, '❌ Статья не найдена');
+    return;
+  }
+
   const authorData = article.author as any;
   const authorDisplay = authorData?.username ? `@${authorData.username}` : `ID:${authorData?.telegram_id || 'N/A'}`;
   const date = new Date(article.created_at).toLocaleDateString('ru-RU');
@@ -932,7 +937,7 @@ ${article.preview || article.body?.substring(0, 300) || 'Нет превью'}..
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: '🗑 Удалить статью', callback_data: `delete_article:${article.id.substring(0, 8)}` }],
+      [{ text: '🗑 Удалить статью', callback_data: `delete_article:${articleShortId}` }],
       [{ text: '◀️ Назад к списку', callback_data: 'articles:0' }],
     ],
   };
@@ -956,6 +961,11 @@ async function handleDeleteArticle(callbackQuery: any, articleShortId: string) {
     .select('id, title, author:author_id(telegram_id)')
     .eq('id', articleId)
     .maybeSingle();
+
+  if (findError || !article) {
+    await answerCallbackQuery(id, '❌ Статья не найдена');
+    return;
+  }
 
   const { error } = await supabase
     .from('articles')
