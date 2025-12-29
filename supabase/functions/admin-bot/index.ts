@@ -2525,15 +2525,9 @@ Deno.serve(async (req) => {
       } else if (text === '/help') {
         await handleStart(chat.id, from.id);
       } else {
-        // Check podcast input
-        const podcastHandled = await handlePodcastUrlInput(chat.id, from.id, text);
-        if (podcastHandled) {
-          return new Response('OK', { headers: corsHeaders });
-        }
-
-        // Check playlist input
-        const playlistHandled = await handlePlaylistInput(chat.id, from.id, text);
-        if (playlistHandled) {
+        // FIRST: Check if this is a rejection reason (has priority over other inputs)
+        const rejectionHandled = await handleRejectionReason(chat.id, from.id, text);
+        if (rejectionHandled) {
           return new Response('OK', { headers: corsHeaders });
         }
 
@@ -2551,12 +2545,20 @@ Deno.serve(async (req) => {
             return new Response('OK', { headers: corsHeaders });
           }
         }
-        
-        // Check if this is a rejection reason
-        const handled = await handleRejectionReason(chat.id, from.id, text);
-        if (!handled) {
-          await sendAdminMessage(chat.id, 'Используйте /help для списка команд.');
+
+        // Check podcast input
+        const podcastHandled = await handlePodcastUrlInput(chat.id, from.id, text);
+        if (podcastHandled) {
+          return new Response('OK', { headers: corsHeaders });
         }
+
+        // Check playlist input
+        const playlistHandled = await handlePlaylistInput(chat.id, from.id, text);
+        if (playlistHandled) {
+          return new Response('OK', { headers: corsHeaders });
+        }
+        
+        await sendAdminMessage(chat.id, 'Используйте /help для списка команд.');
       }
     }
 

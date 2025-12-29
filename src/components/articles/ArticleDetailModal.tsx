@@ -142,10 +142,10 @@ export function ArticleDetailModal({
 
       {/* Modal */}
       <div className="absolute inset-x-0 top-0 bottom-0 flex flex-col bg-card animate-fade-in md:inset-4 md:rounded-2xl">
-        {/* Header - shows topic (or title if no topic) */}
+        {/* Header - shows topic if available, otherwise category or generic */}
         <div className="flex shrink-0 items-center justify-between border-b border-border bg-card p-4">
-          <h2 className="font-heading text-lg font-semibold line-clamp-1">
-            {article.topic || article.title}
+          <h2 className="font-heading text-lg font-semibold line-clamp-1 text-muted-foreground">
+            {article.topic || 'Статья'}
           </h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />

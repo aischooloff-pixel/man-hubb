@@ -263,8 +263,11 @@ export default function Admin() {
                       <div className="flex-1">
                         <h3 className="font-medium line-clamp-1">{article.title}</h3>
                         <p className="text-xs text-muted-foreground">
-                          {article.is_anonymous ? 'Аноним' : article.author?.first_name || 'Unknown'}
+                          {/* Admin always sees original author data */}
+                          {article.author?.first_name || 'Unknown'}
                           {article.author?.username && ` (@${article.author.username})`}
+                          {article.author?.telegram_id && ` • ID: ${article.author.telegram_id}`}
+                          {article.is_anonymous && <span className="ml-1 text-yellow-500">(анонимная)</span>}
                         </p>
                       </div>
                       {getStatusBadge(article.status)}
@@ -366,7 +369,11 @@ export default function Admin() {
           </DialogHeader>
           <div className="py-4">
             <p className="mb-2 text-sm text-muted-foreground">
-              Автор: {selectedArticle?.is_anonymous ? 'Аноним' : selectedArticle?.author?.first_name}
+              {/* Admin always sees real author in view dialog */}
+              Автор: {selectedArticle?.author?.first_name || 'Unknown'}
+              {selectedArticle?.author?.username && ` (@${selectedArticle.author.username})`}
+              {selectedArticle?.author?.telegram_id && ` • ID: ${selectedArticle.author.telegram_id}`}
+              {selectedArticle?.is_anonymous && <span className="ml-1 text-yellow-500">(опубликовано анонимно)</span>}
             </p>
             <div className="prose prose-sm max-w-none">
               <p className="whitespace-pre-wrap">{selectedArticle?.body}</p>

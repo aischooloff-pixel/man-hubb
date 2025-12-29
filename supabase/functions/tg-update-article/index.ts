@@ -165,11 +165,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send moderation request for the edit
+    // Send moderation request for the edit via direct HTTP call
     try {
-      await supabase.functions.invoke('send-edit-moderation', {
-        body: { articleId },
+      const sendEditModerationUrl = `${SUPABASE_URL}/functions/v1/send-edit-moderation`;
+      const modResponse = await fetch(sendEditModerationUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({ articleId }),
       });
+      const modResult = await modResponse.json();
+      console.log('[tg-update-article] send-edit-moderation response:', modResult);
     } catch (modError) {
       console.error('Error sending edit moderation request:', modError);
     }
