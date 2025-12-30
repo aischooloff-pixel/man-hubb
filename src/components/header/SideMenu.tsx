@@ -61,8 +61,11 @@ export function SideMenu({ isOpen, onClose }: SideMenuProps) {
   };
 
   const handleHelpClick = () => {
+    // First close the side menu, then open support modal with delay
     onClose();
-    setIsSupportOpen(true);
+    setTimeout(() => {
+      setIsSupportOpen(true);
+    }, 100);
   };
 
   const handleModalClose = (setter: (v: boolean) => void) => {
@@ -82,7 +85,14 @@ export function SideMenu({ isOpen, onClose }: SideMenuProps) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[100]">
+      {/* Full-screen overlay to capture all clicks */}
+      <div 
+        className="fixed inset-0 z-[100]" 
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        style={{ pointerEvents: 'auto' }}
+      >
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in"
@@ -90,7 +100,10 @@ export function SideMenu({ isOpen, onClose }: SideMenuProps) {
         />
 
         {/* Side panel */}
-        <div className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl animate-slide-right">
+        <div 
+          className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl animate-slide-right overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border p-4">
             <div className="flex items-center gap-3">

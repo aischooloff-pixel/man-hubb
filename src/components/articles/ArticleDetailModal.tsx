@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Article } from '@/types';
 import { cn } from '@/lib/utils';
 import { useArticles } from '@/hooks/use-articles';
+import { supabase } from '@/integrations/supabase/client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +54,7 @@ export function ArticleDetailModal({
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [authorArticlesCount, setAuthorArticlesCount] = useState(0);
 
   const { toggleLike, toggleFavorite, addComment, getArticleState, reportArticle } = useArticles();
 
@@ -63,6 +65,7 @@ export function ArticleDetailModal({
       setIsLiked(false);
       setIsFavorited(false);
       setComments([]);
+      setAuthorArticlesCount(0);
       
       // Load article state
       setIsLoadingState(true);
@@ -72,6 +75,18 @@ export function ArticleDetailModal({
         setComments(state.comments || []);
         setIsLoadingState(false);
       });
+
+      // Load author's articles count
+      if (article.author && !article.is_anonymous) {
+        supabase
+          .from('articles')
+          .select('*', { count: 'exact', head: true })
+          .eq('author_id', article.author.id)
+          .eq('status', 'approved')
+          .then(({ count }) => {
+            setAuthorArticlesCount(count || 0);
+          });
+      }
     }
   }, [isOpen, article, getArticleState]);
 
@@ -186,7 +201,7 @@ export function ArticleDetailModal({
                 </div>
                 <div className="flex items-center gap-1">
                   <FileText className="h-3.5 w-3.5" />
-                  <span>{article.author.articles_count || 0} статей</span>
+                  <span>{authorArticlesCount} статей</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5" />

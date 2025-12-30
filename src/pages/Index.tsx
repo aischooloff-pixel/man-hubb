@@ -80,6 +80,21 @@ export default function Index() {
     loadArticles();
   }, [getApprovedArticles]);
 
+  // Listen for open-article-detail event from notifications
+  useEffect(() => {
+    const handleOpenArticle = (e: CustomEvent<{ articleId: string }>) => {
+      const article = articles.find(a => a.id === e.detail.articleId);
+      if (article) {
+        handleArticleClick(article);
+      }
+    };
+
+    window.addEventListener('open-article-detail', handleOpenArticle as EventListener);
+    return () => {
+      window.removeEventListener('open-article-detail', handleOpenArticle as EventListener);
+    };
+  }, [articles]);
+
   // Sort by likes descending for "Популярное"
   const featuredArticles = [...articles]
     .sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0))

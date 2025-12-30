@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useTelegram } from '@/hooks/use-telegram';
+import { useNavigate } from 'react-router-dom';
 
 interface NotificationsModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ interface Notification {
   message: string;
   is_read: boolean;
   created_at: string;
+  article_id?: string | null;
   article?: { id: string; title: string; topic?: string } | null;
   from_user?: { id: string; first_name: string | null; last_name: string | null; username: string | null; avatar_url: string | null } | null;
 }
@@ -24,11 +26,22 @@ type FilterType = 'all' | 'likes' | 'comments' | 'rep' | 'articles' | 'favorites
 
 export function NotificationsModal({ isOpen, onClose }: NotificationsModalProps) {
   const { webApp } = useTelegram();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('all');
   const [showAll, setShowAll] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const handleNotificationClick = (notification: Notification) => {
+    const articleId = notification.article_id || notification.article?.id;
+    if (articleId) {
+      onClose();
+      // Dispatch custom event to open article modal on current page
+      const event = new CustomEvent('open-article-detail', { detail: { articleId } });
+      window.dispatchEvent(event);
+    }
+  };
 
   const fetchNotifications = async (filterType: FilterType = 'all') => {
     if (!webApp?.initData) return;
@@ -170,26 +183,31 @@ export function NotificationsModal({ isOpen, onClose }: NotificationsModalProps)
               </div>
             ) : notifications.length > 0 ? (
               <div className="divide-y divide-border">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={cn(
-                      'flex items-start gap-3 p-4 transition-colors',
-                      !notification.is_read && 'bg-secondary/30'
-                    )}
-                  >
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-secondary">
-                      {getIcon(notification.type)}
+                {notifications.map((notification) => {
+                  const hasArticle = notification.article_id || notification.article?.id;
+                  return (
+                    <div
+                      key={notification.id}
+                      onClick={() => handleNotificationClick(notification)}
+                      className={cn(
+                        'flex items-start gap-3 p-4 transition-colors',
+                        !notification.is_read && 'bg-secondary/30',
+                        hasArticle && 'cursor-pointer hover:bg-secondary/50'
+                      )}
+                    >
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-secondary">
+                        {getIcon(notification.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm">{notification.message}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatTime(notification.created_at)}</p>
+                      </div>
+                      {!notification.is_read && (
+                        <div className="h-2 w-2 flex-shrink-0 rounded-full bg-foreground mt-2" />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">{notification.message}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{formatTime(notification.created_at)}</p>
-                    </div>
-                    {!notification.is_read && (
-                      <div className="h-2 w-2 flex-shrink-0 rounded-full bg-foreground mt-2" />
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-12">Нет уведомлений</p>
@@ -251,26 +269,31 @@ export function NotificationsModal({ isOpen, onClose }: NotificationsModalProps)
           </div>
         ) : displayedNotifications.length > 0 ? (
           <div className="divide-y divide-border">
-            {displayedNotifications.map((notification) => (
-              <div
-                key={notification.id}
-                className={cn(
-                  'flex items-start gap-3 p-4 transition-colors hover:bg-secondary/50',
-                  !notification.is_read && 'bg-secondary/30'
-                )}
-              >
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-secondary">
-                  {getIcon(notification.type)}
+            {displayedNotifications.map((notification) => {
+              const hasArticle = notification.article_id || notification.article?.id;
+              return (
+                <div
+                  key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
+                  className={cn(
+                    'flex items-start gap-3 p-4 transition-colors',
+                    !notification.is_read && 'bg-secondary/30',
+                    hasArticle && 'cursor-pointer hover:bg-secondary/50'
+                  )}
+                >
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-secondary">
+                    {getIcon(notification.type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">{notification.message}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatTime(notification.created_at)}</p>
+                  </div>
+                  {!notification.is_read && (
+                    <div className="h-2 w-2 flex-shrink-0 rounded-full bg-foreground mt-2" />
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">{notification.message}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatTime(notification.created_at)}</p>
-                </div>
-                {!notification.is_read && (
-                  <div className="h-2 w-2 flex-shrink-0 rounded-full bg-foreground mt-2" />
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-center text-muted-foreground py-8">Нет уведомлений</p>

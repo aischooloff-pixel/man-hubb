@@ -119,6 +119,8 @@ export function useWelcomeModal() {
 
   useEffect(() => {
     const hasShown = localStorage.getItem(WELCOME_STORAGE_KEY);
+    
+    // Only show welcome modal if it hasn't been shown before
     if (!hasShown) {
       // Small delay to let the page load first
       const timer = setTimeout(() => setShowWelcome(true), 500);
@@ -126,8 +128,14 @@ export function useWelcomeModal() {
     }
   }, []);
 
+  const closeWelcome = () => {
+    // Mark as shown when closing
+    localStorage.setItem(WELCOME_STORAGE_KEY, 'true');
+    setShowWelcome(false);
+  };
+
   return {
     showWelcome,
-    closeWelcome: () => setShowWelcome(false),
+    closeWelcome,
   };
 }
