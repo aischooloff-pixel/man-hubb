@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Crown, Star, FileText, Calendar, ExternalLink, Globe, Flag, Package, Play, Plus, TrendingUp } from 'lucide-react';
+import { X, Crown, Star, FileText, Calendar, ExternalLink, Globe, Flag, Package, Play, Plus, Minus, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -84,7 +84,6 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
   const [reputationHistory, setReputationHistory] = useState<ReputationHistoryEntry[]>([]);
   const [reputationLoading, setReputationLoading] = useState(false);
   const [giveRepOpen, setGiveRepOpen] = useState(false);
-  const [giveRepReason, setGiveRepReason] = useState('');
   const [giveRepSubmitting, setGiveRepSubmitting] = useState(false);
   const { getInitData } = useTelegram();
 
@@ -210,11 +209,8 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
     }
   };
 
-  const handleGiveRep = async () => {
-    if (!giveRepReason.trim() || !authorId) {
-      toast.error('Укажите причину');
-      return;
-    }
+  const handleGiveRep = async (value: 1 | -1) => {
+    if (!authorId) return;
 
     const initData = getInitData();
     if (!initData) {
@@ -225,7 +221,7 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
     setGiveRepSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke('tg-give-reputation', {
-        body: { initData, targetUserId: authorId, reason: giveRepReason.trim() },
+        body: { initData, targetUserId: authorId, value },
       });
 
       if (error) {
@@ -237,9 +233,8 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
         throw new Error(data.error);
       }
 
-      toast.success('+1 rep отправлено!');
+      toast.success(value > 0 ? '+1 rep отправлено!' : '-1 rep отправлено!');
       setGiveRepOpen(false);
-      setGiveRepReason('');
       
       // Refresh profile to update reputation
       loadProfile();
@@ -790,8 +785,17 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <TrendingUp className="h-4 w-4 text-green-500" />
-                        <span className="font-bold text-green-500">+{entry.value}</span>
+                        {entry.value > 0 ? (
+                          <>
+                            <TrendingUp className="h-4 w-4 text-green-500" />
+                            <span className="font-bold text-green-500">+{entry.value}</span>
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="h-4 w-4 text-red-500" />
+                            <span className="font-bold text-red-500">{entry.value}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -807,46 +811,39 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5 text-primary" />
+              <Star className="h-5 w-5 text-primary" />
               Дать репутацию
             </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Укажите причину, почему вы хотите дать +1 rep этому пользователю. Вы можете давать репутацию одному пользователю раз в 24 часа.
+              Выберите действие. Вы можете изменять репутацию одному пользователю раз в 24 часа.
             </p>
-            
-            <Input
-              value={giveRepReason}
-              onChange={(e) => setGiveRepReason(e.target.value)}
-              placeholder="Причина (напр. 'За полезную статью')"
-              disabled={giveRepSubmitting}
-              maxLength={100}
-            />
             
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setGiveRepOpen(false);
-                  setGiveRepReason('');
-                }}
+                onClick={() => handleGiveRep(-1)}
                 disabled={giveRepSubmitting}
-                className="flex-1"
-              >
-                Отмена
-              </Button>
-              <Button
-                onClick={handleGiveRep}
-                disabled={giveRepSubmitting || !giveRepReason.trim()}
-                className="flex-1 gap-2"
+                className="flex-1 gap-2 border-red-500/50 text-red-500 hover:bg-red-500/10 hover:text-red-500"
               >
                 {giveRepSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Отправка...
+                    <Minus className="h-4 w-4" />
+                    -1 rep
                   </>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleGiveRep(1)}
+                disabled={giveRepSubmitting}
+                className="flex-1 gap-2 bg-green-600 hover:bg-green-700"
+              >
+                {giveRepSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
                     <Plus className="h-4 w-4" />

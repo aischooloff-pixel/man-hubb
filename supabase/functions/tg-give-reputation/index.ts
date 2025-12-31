@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { initData, targetUserId, reason } = await req.json();
+    const { initData, targetUserId, value } = await req.json();
     
     if (!initData) {
       return new Response(JSON.stringify({ error: 'initData is required' }), {
@@ -95,8 +95,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!targetUserId || !reason?.trim()) {
-      return new Response(JSON.stringify({ error: 'targetUserId and reason are required' }), {
+    // Validate value is 1 or -1
+    const repValue = value === 1 ? 1 : value === -1 ? -1 : null;
+    if (!targetUserId || repValue === null) {
+      return new Response(JSON.stringify({ error: 'targetUserId and value (1 or -1) are required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -149,7 +151,7 @@ Deno.serve(async (req) => {
       .insert({
         user_id: targetUserId,
         from_user_id: senderProfile.id,
-        value: 1,
+        value: repValue,
       });
 
     if (insertErr) {
@@ -160,7 +162,7 @@ Deno.serve(async (req) => {
     // Update profile reputation
     const { error: updateErr } = await supabase
       .from('profiles')
-      .update({ reputation: (targetProfile.reputation || 0) + 1 })
+      .update({ reputation: (targetProfile.reputation || 0) + repValue })
       .eq('id', targetUserId);
 
     if (updateErr) {
@@ -172,13 +174,15 @@ Deno.serve(async (req) => {
       ? `@${senderProfile.username}` 
       : senderProfile.first_name || 'Пользователь';
 
+    const repText = repValue > 0 ? '+1 rep' : '-1 rep';
+    
     await supabase
       .from('notifications')
       .insert({
         user_profile_id: targetUserId,
         from_user_id: senderProfile.id,
         type: 'reputation',
-        message: `${senderName} дал вам +1 rep: "${reason.trim()}"`,
+        message: `${senderName} дал вам ${repText}`,
         is_read: false,
       });
 
