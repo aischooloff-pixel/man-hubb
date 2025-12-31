@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.tg-upload-product-media]
 verify_jwt = false
+
+[functions.tg-report-user]
+verify_jwt = false

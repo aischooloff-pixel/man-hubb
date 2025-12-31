@@ -882,6 +882,57 @@ export type Database = {
           },
         ]
       }
+      user_reports: {
+        Row: {
+          admin_message_id: number | null
+          created_at: string
+          id: string
+          reason: string
+          reported_user_id: string
+          reporter_profile_id: string
+          reviewed_at: string | null
+          reviewed_by_telegram_id: number | null
+          status: string
+        }
+        Insert: {
+          admin_message_id?: number | null
+          created_at?: string
+          id?: string
+          reason: string
+          reported_user_id: string
+          reporter_profile_id: string
+          reviewed_at?: string | null
+          reviewed_by_telegram_id?: number | null
+          status?: string
+        }
+        Update: {
+          admin_message_id?: number | null
+          created_at?: string
+          id?: string
+          reason?: string
+          reported_user_id?: string
+          reporter_profile_id?: string
+          reviewed_at?: string | null
+          reviewed_by_telegram_id?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_reports_reported_user_id_fkey"
+            columns: ["reported_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_reports_reporter_profile_id_fkey"
+            columns: ["reporter_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null

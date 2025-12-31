@@ -136,6 +136,7 @@ async function handleStart(chatId: number, userId: number) {
 📝 /pending — Статьи на модерации
 📰 /st — Список статей
 🚨 /zb — Жалобы на статьи
+👤 /user_reports — Жалобы на пользователей
 ⭐ /otz — Отзывы пользователей
 ❓ /questions — Вопросы в поддержку
 📢 /broadcast — Рассылка всем пользователям
@@ -3085,6 +3086,11 @@ async function handleCallbackQuery(callbackQuery: any) {
     await handlePromoCodeCallback(callbackQuery, 'del', param);
   } else if (action === 'pr_toggle') {
     await handlePromoCodeCallback(callbackQuery, 'toggle', param);
+  } else if (action === 'user_report_done') {
+    await handleUserReportDone(callbackQuery, param);
+  } else if (action === 'user_reports') {
+    await answerCallbackQuery(callbackQuery.id);
+    await handleUserReports(message.chat.id, from.id, parseInt(param || '0'), message.message_id);
   }
 }
 
@@ -3189,6 +3195,118 @@ async function handleReportDone(callbackQuery: any, reportId: string) {
 
   await answerCallbackQuery(id, '✅ Жалоба рассмотрена');
   await handleReports(message.chat.id, from.id, 0, message.message_id);
+}
+
+// ==================== USER REPORTS MANAGEMENT ====================
+
+const USER_REPORTS_PER_PAGE = 10;
+
+// Handle /user_reports command - show user reports
+async function handleUserReports(chatId: number, userId: number, page: number = 0, messageId?: number) {
+  if (!isAdmin(userId)) return;
+
+  const from = page * USER_REPORTS_PER_PAGE;
+
+  const { count: totalCount } = await supabase
+    .from('user_reports')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'pending');
+
+  const { data: reports, error } = await supabase
+    .from('user_reports')
+    .select(`
+      id,
+      reason,
+      status,
+      created_at,
+      reported_user:reported_user_id(telegram_id, username, first_name),
+      reporter:reporter_profile_id(telegram_id, username, first_name)
+    `)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .range(from, from + USER_REPORTS_PER_PAGE - 1);
+
+  if (error) {
+    console.error('Error fetching user reports:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка загрузки жалоб на пользователей');
+    return;
+  }
+
+  const totalPages = Math.ceil((totalCount || 0) / USER_REPORTS_PER_PAGE);
+
+  let message = `👤 <b>Жалобы на пользователей</b> (${totalCount || 0})\n`;
+  message += `📄 Страница ${page + 1}/${totalPages || 1}\n\n`;
+
+  if (!reports || reports.length === 0) {
+    message += '<i>Нет нерассмотренных жалоб</i>';
+  } else {
+    for (const report of reports) {
+      const reported = (report as any).reported_user;
+      const reporter = (report as any).reporter;
+      const date = new Date(report.created_at).toLocaleDateString('ru-RU');
+      const reportedDisplay = reported?.username ? '@' + reported.username : reported?.first_name || `ID:${reported?.telegram_id}`;
+      const reporterDisplay = reporter?.username ? '@' + reporter.username : reporter?.first_name || `ID:${reporter?.telegram_id}`;
+      
+      message += `🚨 <b>${reportedDisplay}</b>\n`;
+      message += `   📋 ${(report.reason || '').substring(0, 60)}${(report.reason || '').length > 60 ? '...' : ''}\n`;
+      message += `   👮 От: ${reporterDisplay}\n`;
+      message += `   📅 ${date}\n\n`;
+    }
+  }
+
+  // Build keyboard
+  const buttons: any[][] = [];
+  if (reports && reports.length > 0) {
+    for (const report of reports) {
+      const reported = (report as any).reported_user;
+      const reportedDisplay = reported?.username ? '@' + reported.username : (reported?.first_name || 'Пользователь').substring(0, 15);
+      buttons.push([
+        { text: `✅ Рассмотрено: ${reportedDisplay}`, callback_data: `user_report_done:${report.id}` },
+        { text: `🚫 Заблок.`, callback_data: `block:${reported?.telegram_id}` },
+      ]);
+    }
+  }
+
+  // Pagination
+  const prevPage = page > 0 ? page - 1 : page;
+  const nextPage = page < totalPages - 1 ? page + 1 : page;
+  if (totalPages > 1) {
+    buttons.push([
+      { text: '⬅️ Назад', callback_data: `user_reports:${prevPage}` },
+      { text: 'Вперёд ➡️', callback_data: `user_reports:${nextPage}` },
+    ]);
+  }
+
+  const keyboard = { inline_keyboard: buttons };
+
+  if (messageId) {
+    await editAdminMessage(chatId, messageId, message, { reply_markup: keyboard });
+  } else {
+    await sendAdminMessage(chatId, message, { reply_markup: keyboard });
+  }
+}
+
+// Handle user_report_done callback
+async function handleUserReportDone(callbackQuery: any, reportId: string) {
+  const { id, message, from } = callbackQuery;
+
+  const { error } = await supabase
+    .from('user_reports')
+    .update({
+      status: 'reviewed',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by_telegram_id: from.id,
+    })
+    .eq('id', reportId);
+
+  if (error) {
+    console.error('Error marking user report as done:', error);
+    await answerCallbackQuery(id, '❌ Ошибка обновления');
+    return;
+  }
+
+  await answerCallbackQuery(id, '✅ Жалоба рассмотрена');
+  await handleUserReports(message.chat.id, from.id, 0, message.message_id);
 }
 
 // ==================== REVIEWS MANAGEMENT ====================
@@ -3606,6 +3724,8 @@ Deno.serve(async (req) => {
       } else if (text?.startsWith('/pr_toggle ')) {
         const args = text.replace('/pr_toggle ', '').trim();
         await handleTogglePromoCode(chat.id, from.id, args);
+      } else if (text === '/user_reports') {
+        await handleUserReports(chat.id, from.id);
       } else if (text === '/help') {
         await handleStart(chat.id, from.id);
       } else {

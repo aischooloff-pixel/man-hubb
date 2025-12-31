@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
-import { X, Crown, Star, FileText, Calendar, ExternalLink, Globe } from 'lucide-react';
+import { X, Crown, Star, FileText, Calendar, ExternalLink, Globe, Flag, Package, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArticleDetailModal } from '@/components/articles/ArticleDetailModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { useTelegram } from '@/hooks/use-telegram';
+import { toast } from 'sonner';
+import { Loader2, Send, CheckCircle } from 'lucide-react';
+import { PodcastPlayerModal } from '@/components/podcasts/PodcastPlayerModal';
 import type { Article } from '@/types';
 
 interface PublicProfile {
@@ -25,6 +31,17 @@ interface PublicProfile {
   created_at: string;
 }
 
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  currency: string;
+  media_url: string | null;
+  media_type: string | null;
+  link: string | null;
+}
+
 interface PublicProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -34,17 +51,115 @@ interface PublicProfileModalProps {
 export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileModalProps) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [articles, setArticles] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleDetailOpen, setArticleDetailOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+  const [videoPlayerOpen, setVideoPlayerOpen] = useState(false);
+  const [videoToPlay, setVideoToPlay] = useState<{ id: string; title: string } | null>(null);
+  const { getInitData } = useTelegram();
 
   useEffect(() => {
     if (isOpen && authorId) {
       loadProfile();
       loadArticles();
+      loadProducts();
     }
   }, [isOpen, authorId]);
+
+  const loadProducts = async () => {
+    if (!authorId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_products')
+        .select('*')
+        .eq('user_profile_id', authorId)
+        .eq('is_active', true)
+        .limit(1);
+      
+      if (!error && data) {
+        setProducts(data as Product[]);
+      }
+    } catch (err) {
+      console.error('Error loading products:', err);
+    }
+  };
+
+  const extractYoutubeId = (url: string): string | null => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const getYoutubeThumbnail = (url: string): string | null => {
+    const videoId = extractYoutubeId(url);
+    if (videoId) {
+      return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    }
+    return null;
+  };
+
+  const handlePlayVideo = (url: string, title: string) => {
+    const videoId = extractYoutubeId(url);
+    if (videoId) {
+      setVideoToPlay({ id: videoId, title });
+      setVideoPlayerOpen(true);
+    }
+  };
+
+  const handleReportSubmit = async () => {
+    if (!reportReason.trim() || !authorId) {
+      toast.error('Укажите причину жалобы');
+      return;
+    }
+
+    const initData = getInitData();
+    if (!initData) {
+      toast.error('Не удалось авторизоваться');
+      return;
+    }
+
+    setReportSubmitting(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tg-report-user`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            initData, 
+            reportedUserId: authorId,
+            reason: reportReason.trim() 
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка отправки');
+      }
+
+      setReportSuccess(true);
+      setReportReason('');
+      
+      setTimeout(() => {
+        setReportSuccess(false);
+        setReportOpen(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Report error:', error);
+      toast.error('Не удалось отправить жалобу');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   const loadProfile = async () => {
     if (!authorId) return;
@@ -258,8 +373,75 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
                   </div>
                 </div>
 
+                {/* Products - only for Premium users */}
+                {profile.subscription_tier === 'premium' && products.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="font-heading text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Package className="h-4 w-4 text-primary" />
+                      Продукт
+                    </h3>
+                    {products.map((product) => (
+                      <div key={product.id} className="rounded-xl border border-border p-4">
+                        <div className="flex gap-3">
+                          {product.media_url && (
+                            <div 
+                              className="w-16 h-16 rounded-lg bg-secondary flex-shrink-0 overflow-hidden cursor-pointer"
+                              onClick={() => {
+                                if (product.media_type === 'youtube' && product.media_url) {
+                                  handlePlayVideo(product.media_url, product.title);
+                                }
+                              }}
+                            >
+                              {product.media_type === 'youtube' ? (
+                                <div className="w-full h-full relative group">
+                                  <img
+                                    src={getYoutubeThumbnail(product.media_url!) || ''}
+                                    alt={product.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                                    <Play className="h-5 w-5 text-white" fill="white" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <img
+                                  src={product.media_url}
+                                  alt={product.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              )}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm line-clamp-1">{product.title}</h4>
+                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                              {product.description}
+                            </p>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="font-semibold text-primary">
+                                {product.price.toLocaleString()} {product.currency === 'RUB' ? '₽' : product.currency === 'USD' ? '$' : '€'}
+                              </span>
+                              {product.link && (
+                                <a
+                                  href={product.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-primary flex items-center gap-1 hover:underline"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  Подробнее
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Articles */}
-                <div>
+                <div className="mb-6">
                   <h3 className="font-heading text-sm font-semibold mb-3">Статьи автора</h3>
                   
                   {articlesLoading ? (
@@ -299,6 +481,17 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
                     </p>
                   )}
                 </div>
+
+                {/* Report Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground hover:text-destructive"
+                  onClick={() => setReportOpen(true)}
+                >
+                  <Flag className="h-4 w-4 mr-2" />
+                  Пожаловаться на пользователя
+                </Button>
               </>
             ) : (
               <p className="text-center text-muted-foreground">Профиль не найден</p>
@@ -313,6 +506,95 @@ export function PublicProfileModal({ isOpen, onClose, authorId }: PublicProfileM
         onClose={() => setArticleDetailOpen(false)}
         article={selectedArticle}
       />
+
+      {/* Video Player Modal */}
+      <PodcastPlayerModal
+        isOpen={videoPlayerOpen}
+        onClose={() => setVideoPlayerOpen(false)}
+        podcast={videoToPlay ? {
+          id: videoToPlay.id,
+          title: videoToPlay.title,
+          youtube_id: videoToPlay.id,
+          youtube_url: `https://youtube.com/watch?v=${videoToPlay.id}`,
+          description: '',
+          thumbnail_url: '',
+          duration: '',
+          created_at: new Date().toISOString(),
+        } : null}
+      />
+
+      {/* Report Modal */}
+      <Dialog open={reportOpen} onOpenChange={(open) => {
+        if (!reportSubmitting) {
+          setReportOpen(open);
+          if (!open) {
+            setReportReason('');
+            setReportSuccess(false);
+          }
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Пожаловаться на пользователя</DialogTitle>
+          </DialogHeader>
+
+          {reportSuccess ? (
+            <div className="py-8 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
+                <CheckCircle className="h-8 w-8 text-green-500" />
+              </div>
+              <h3 className="mb-2 text-lg font-semibold">Жалоба отправлена!</h3>
+              <p className="text-sm text-muted-foreground">
+                Мы рассмотрим вашу жалобу в ближайшее время
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Опишите причину жалобы на пользователя {displayUsername ? `@${displayUsername}` : displayName}
+              </p>
+
+              <Textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Укажите причину жалобы..."
+                rows={5}
+                disabled={reportSubmitting}
+                className="resize-none"
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setReportOpen(false)}
+                  disabled={reportSubmitting}
+                  className="flex-1"
+                >
+                  Отмена
+                </Button>
+                <Button
+                  onClick={handleReportSubmit}
+                  disabled={reportSubmitting || !reportReason.trim()}
+                  className="flex-1 gap-2"
+                  variant="destructive"
+                >
+                  {reportSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Отправка...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Отправить
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
