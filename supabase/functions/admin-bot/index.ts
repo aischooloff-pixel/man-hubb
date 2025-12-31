@@ -1085,6 +1085,267 @@ async function handleSetYearlyDiscount(chatId: number, userId: number, args: str
   await sendAdminMessage(chatId, `✅ Годовая скидка установлена: ${percent}%`);
 }
 
+// Handle /pr command - list promo codes
+async function handlePromoCodes(chatId: number, userId: number) {
+  if (!isAdmin(userId)) return;
+
+  const { data: promoCodes, error } = await supabase
+    .from('promo_codes')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching promo codes:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка при загрузке промокодов');
+    return;
+  }
+
+  if (!promoCodes || promoCodes.length === 0) {
+    await sendAdminMessage(chatId, `🏷️ <b>Промокоды</b>
+
+Активных промокодов нет.
+
+<b>Создать новый:</b>
+<code>/pr_add КОД скидка%</code>
+
+Пример:
+<code>/pr_add NEWYEAR 20</code>`);
+    return;
+  }
+
+  let message = `🏷️ <b>Промокоды</b> (${promoCodes.length})\n\n`;
+
+  for (const promo of promoCodes) {
+    const status = promo.is_active ? '✅' : '❌';
+    const expiryText = promo.expires_at 
+      ? `до ${new Date(promo.expires_at).toLocaleDateString('ru-RU')}`
+      : 'бессрочно';
+    const usesText = promo.max_uses 
+      ? `${promo.uses_count}/${promo.max_uses}`
+      : `${promo.uses_count}/∞`;
+
+    message += `${status} <code>${promo.code}</code> — ${promo.discount_percent}%
+├ Использований: ${usesText}
+└ ${expiryText}\n\n`;
+  }
+
+  message += `<b>Команды:</b>
+• <code>/pr_add КОД скидка%</code> — создать
+• <code>/pr_del КОД</code> — удалить
+• <code>/pr_edit КОД скидка%</code> — изменить скидку
+• <code>/pr_toggle КОД</code> — вкл/выкл`;
+
+  const buttons = promoCodes.slice(0, 5).map(promo => ([
+    { text: `❌ ${promo.code}`, callback_data: `pr_del:${promo.id}` },
+    { text: promo.is_active ? '🔴 Выкл' : '🟢 Вкл', callback_data: `pr_toggle:${promo.id}` }
+  ]));
+
+  await sendAdminMessage(chatId, message, {
+    reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined
+  });
+}
+
+// Handle /pr_add command - add new promo code
+async function handleAddPromoCode(chatId: number, userId: number, args: string) {
+  if (!isAdmin(userId)) return;
+
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2) {
+    await sendAdminMessage(chatId, `🏷️ <b>Создание промокода</b>
+
+Используйте:
+<code>/pr_add КОД скидка% [макс_использований] [дней_действия]</code>
+
+Примеры:
+<code>/pr_add NEWYEAR 20</code> — скидка 20%, без ограничений
+<code>/pr_add SALE50 50 100</code> — 50%, макс 100 использований
+<code>/pr_add FLASH30 30 50 7</code> — 30%, 50 использований, 7 дней`);
+    return;
+  }
+
+  const code = parts[0].toUpperCase();
+  const discount = parseInt(parts[1]);
+  const maxUses = parts[2] ? parseInt(parts[2]) : null;
+  const days = parts[3] ? parseInt(parts[3]) : null;
+
+  if (isNaN(discount) || discount < 1 || discount > 100) {
+    await sendAdminMessage(chatId, '❌ Скидка должна быть от 1 до 100%');
+    return;
+  }
+
+  // Check if code already exists
+  const { data: existing } = await supabase
+    .from('promo_codes')
+    .select('id')
+    .eq('code', code)
+    .maybeSingle();
+
+  if (existing) {
+    await sendAdminMessage(chatId, `❌ Промокод <code>${code}</code> уже существует`);
+    return;
+  }
+
+  const expiresAt = days ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString() : null;
+
+  const { error } = await supabase
+    .from('promo_codes')
+    .insert({
+      code,
+      discount_percent: discount,
+      max_uses: maxUses,
+      expires_at: expiresAt,
+      is_active: true
+    });
+
+  if (error) {
+    console.error('Error creating promo code:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка при создании промокода');
+    return;
+  }
+
+  let msg = `✅ Промокод создан!\n\n<code>${code}</code> — ${discount}%`;
+  if (maxUses) msg += `\nМакс. использований: ${maxUses}`;
+  if (days) msg += `\nДействует: ${days} дней`;
+
+  await sendAdminMessage(chatId, msg);
+}
+
+// Handle /pr_del command - delete promo code
+async function handleDeletePromoCode(chatId: number, userId: number, args: string) {
+  if (!isAdmin(userId)) return;
+
+  const code = args.trim().toUpperCase();
+  if (!code) {
+    await sendAdminMessage(chatId, 'Используйте: <code>/pr_del КОД</code>');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('promo_codes')
+    .delete()
+    .eq('code', code);
+
+  if (error) {
+    console.error('Error deleting promo code:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка при удалении');
+    return;
+  }
+
+  await sendAdminMessage(chatId, `✅ Промокод <code>${code}</code> удалён`);
+}
+
+// Handle /pr_edit command - edit promo code discount
+async function handleEditPromoCode(chatId: number, userId: number, args: string) {
+  if (!isAdmin(userId)) return;
+
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2) {
+    await sendAdminMessage(chatId, 'Используйте: <code>/pr_edit КОД скидка%</code>');
+    return;
+  }
+
+  const code = parts[0].toUpperCase();
+  const discount = parseInt(parts[1]);
+
+  if (isNaN(discount) || discount < 1 || discount > 100) {
+    await sendAdminMessage(chatId, '❌ Скидка должна быть от 1 до 100%');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('promo_codes')
+    .update({ discount_percent: discount, updated_at: new Date().toISOString() })
+    .eq('code', code);
+
+  if (error) {
+    console.error('Error updating promo code:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка при обновлении');
+    return;
+  }
+
+  await sendAdminMessage(chatId, `✅ Скидка промокода <code>${code}</code> изменена на ${discount}%`);
+}
+
+// Handle /pr_toggle command - toggle promo code active state
+async function handleTogglePromoCode(chatId: number, userId: number, args: string) {
+  if (!isAdmin(userId)) return;
+
+  const code = args.trim().toUpperCase();
+  if (!code) {
+    await sendAdminMessage(chatId, 'Используйте: <code>/pr_toggle КОД</code>');
+    return;
+  }
+
+  const { data: promo } = await supabase
+    .from('promo_codes')
+    .select('is_active')
+    .eq('code', code)
+    .maybeSingle();
+
+  if (!promo) {
+    await sendAdminMessage(chatId, '❌ Промокод не найден');
+    return;
+  }
+
+  const newState = !promo.is_active;
+  const { error } = await supabase
+    .from('promo_codes')
+    .update({ is_active: newState, updated_at: new Date().toISOString() })
+    .eq('code', code);
+
+  if (error) {
+    console.error('Error toggling promo code:', error);
+    await sendAdminMessage(chatId, '❌ Ошибка при обновлении');
+    return;
+  }
+
+  await sendAdminMessage(chatId, `✅ Промокод <code>${code}</code> ${newState ? 'активирован' : 'деактивирован'}`);
+}
+
+// Handle promo code callbacks
+async function handlePromoCodeCallback(callbackQuery: any, action: string, promoId: string) {
+  const { id, message, from } = callbackQuery;
+  
+  if (!isAdmin(from.id)) {
+    await answerCallbackQuery(id, '❌ Нет доступа');
+    return;
+  }
+
+  if (action === 'del') {
+    const { error } = await supabase
+      .from('promo_codes')
+      .delete()
+      .eq('id', promoId);
+
+    if (error) {
+      await answerCallbackQuery(id, '❌ Ошибка');
+      return;
+    }
+
+    await answerCallbackQuery(id, '✅ Удалён');
+    await handlePromoCodes(message.chat.id, from.id);
+  } else if (action === 'toggle') {
+    const { data: promo } = await supabase
+      .from('promo_codes')
+      .select('is_active')
+      .eq('id', promoId)
+      .maybeSingle();
+
+    if (!promo) {
+      await answerCallbackQuery(id, '❌ Не найден');
+      return;
+    }
+
+    await supabase
+      .from('promo_codes')
+      .update({ is_active: !promo.is_active, updated_at: new Date().toISOString() })
+      .eq('id', promoId);
+
+    await answerCallbackQuery(id, promo.is_active ? '🔴 Выключен' : '🟢 Включен');
+    await handlePromoCodes(message.chat.id, from.id);
+  }
+}
+
 // Subscription callback handlers
 async function handleSubGrantPlus(callbackQuery: any, telegramId: string) {
   const { id, message } = callbackQuery;
@@ -2820,6 +3081,10 @@ async function handleCallbackQuery(callbackQuery: any) {
     await handleSubRevoke(callbackQuery, param);
   } else if (action === 'sub_extend') {
     await handleSubExtend(callbackQuery, param, parseInt(param2 || '30'));
+  } else if (action === 'pr_del') {
+    await handlePromoCodeCallback(callbackQuery, 'del', param);
+  } else if (action === 'pr_toggle') {
+    await handlePromoCodeCallback(callbackQuery, 'toggle', param);
   }
 }
 
@@ -3330,6 +3595,17 @@ Deno.serve(async (req) => {
       } else if (text?.startsWith('/pr_add ')) {
         const args = text.replace('/pr_add ', '').trim();
         await handleAddPromoCode(chat.id, from.id, args);
+      } else if (text === '/pr_add') {
+        await handleAddPromoCode(chat.id, from.id, '');
+      } else if (text?.startsWith('/pr_del ')) {
+        const args = text.replace('/pr_del ', '').trim();
+        await handleDeletePromoCode(chat.id, from.id, args);
+      } else if (text?.startsWith('/pr_edit ')) {
+        const args = text.replace('/pr_edit ', '').trim();
+        await handleEditPromoCode(chat.id, from.id, args);
+      } else if (text?.startsWith('/pr_toggle ')) {
+        const args = text.replace('/pr_toggle ', '').trim();
+        await handleTogglePromoCode(chat.id, from.id, args);
       } else if (text === '/help') {
         await handleStart(chat.id, from.id);
       } else {
