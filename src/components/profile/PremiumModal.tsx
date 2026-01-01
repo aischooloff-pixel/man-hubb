@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Check, Crown, Sparkles, MessageCircle, Users, Infinity, BadgeCheck, Bot, FileText, Headphones, Music, ShoppingBag, GraduationCap, ChevronLeft, ChevronRight, Tag, Loader2 } from 'lucide-react';
+import { X, Check, Crown, Sparkles, MessageCircle, Users, Infinity, BadgeCheck, Bot, FileText, Headphones, Music, ShoppingBag, GraduationCap, ChevronLeft, ChevronRight, Tag, Loader2, ArrowLeft, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { SupportModal } from './SupportModal';
 
 interface PremiumModalProps {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
   const [promoDiscount, setPromoDiscount] = useState(0);
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoApplied, setPromoApplied] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [pricing, setPricing] = useState<PricingData>({
     plus: { monthly: 299, yearly: 2510, monthlyOriginal: 598, yearlyOriginal: 5020 },
     premium: { monthly: 2490, yearly: 20916, monthlyOriginal: 4980, yearlyOriginal: 41832 },
@@ -44,10 +47,11 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
   useEffect(() => {
     if (isOpen) {
       loadPricing();
-      // Reset promo state when modal opens
+      // Reset state when modal opens
       setPromoCode('');
       setPromoDiscount(0);
       setPromoApplied(false);
+      setSelectedPlan(null);
     }
   }, [isOpen]);
 
@@ -195,9 +199,79 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
     }
   };
 
-  const handlePayment = (planId: string) => {
-    console.log('Processing payment for', planId, 'plan,', billingPeriod);
-    onClose();
+  const handleSelectPlan = (planId: string) => {
+    if (planId === 'plus') {
+      setSelectedPlan(planId);
+    }
+  };
+
+  const handleBackToPlans = () => {
+    setSelectedPlan(null);
+  };
+
+  const paymentMethods = [
+    {
+      id: 'sbp',
+      name: 'СБП',
+      description: 'Система быстрых платежей',
+      logo: (
+        <svg viewBox="0 0 32 32" className="h-8 w-8">
+          <circle cx="16" cy="16" r="16" fill="#1D1D1B"/>
+          <path d="M16 6L8 10.5V21.5L16 26L24 21.5V10.5L16 6Z" fill="url(#sbp-gradient)"/>
+          <path d="M16 6V16L24 10.5L16 6Z" fill="#5B57A2"/>
+          <path d="M16 16V26L24 21.5V10.5L16 16Z" fill="#D90751"/>
+          <path d="M8 10.5L16 16V6L8 10.5Z" fill="#FAB718"/>
+          <path d="M8 21.5L16 16V26L8 21.5Z" fill="#0F8F41"/>
+          <path d="M8 10.5V21.5L16 16L8 10.5Z" fill="#1D83B4"/>
+          <defs>
+            <linearGradient id="sbp-gradient" x1="8" y1="16" x2="24" y2="16">
+              <stop stopColor="#FAB718"/>
+              <stop offset="0.5" stopColor="#0F8F41"/>
+              <stop offset="1" stopColor="#D90751"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      ),
+    },
+    {
+      id: 'crypto',
+      name: 'Крипта',
+      description: 'CryptoBot',
+      logo: (
+        <svg viewBox="0 0 32 32" className="h-8 w-8">
+          <circle cx="16" cy="16" r="16" fill="#0088CC"/>
+          <path d="M22.5 10.5L16 7L9.5 10.5V17.5L16 21L22.5 17.5V10.5Z" fill="white"/>
+          <path d="M16 13V17M14 14.5H18M12 12L16 14L20 12" stroke="#0088CC" strokeWidth="1.2" strokeLinecap="round"/>
+          <circle cx="16" cy="15" r="4" fill="none" stroke="white" strokeWidth="1"/>
+          <path d="M13 22L16 24L19 22" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'stars',
+      name: 'Telegram Stars',
+      description: 'Звёзды Telegram',
+      logo: (
+        <svg viewBox="0 0 32 32" className="h-8 w-8">
+          <circle cx="16" cy="16" r="16" fill="url(#stars-bg)"/>
+          <path d="M16 6L18.5 13H26L20 17.5L22.5 25L16 20.5L9.5 25L12 17.5L6 13H13.5L16 6Z" fill="#FFD700"/>
+          <path d="M16 9L17.8 14H23L18.6 17L20.4 22L16 18.8L11.6 22L13.4 17L9 14H14.2L16 9Z" fill="#FFF8DC"/>
+          <defs>
+            <linearGradient id="stars-bg" x1="0" y1="0" x2="32" y2="32">
+              <stop stopColor="#6B5CE7"/>
+              <stop offset="1" stopColor="#A855F7"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      ),
+    },
+  ];
+
+  // Get current plan price for display
+  const getCurrentPlanPrice = () => {
+    if (!selectedPlan) return 0;
+    const plan = plans.find(p => p.id === selectedPlan);
+    return plan ? plan.price[billingPeriod] : 0;
   };
 
   const scrollToSlide = (index: number) => {
@@ -248,6 +322,66 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
         </Button>
 
         <div className="p-6">
+          {selectedPlan ? (
+            <>
+              {/* Payment Methods Screen */}
+              <div className="mb-6">
+                <button
+                  onClick={handleBackToPlans}
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Назад к тарифам
+                </button>
+                
+                <div className="text-center mb-6">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
+                    <Crown className="h-8 w-8 text-primary" />
+                  </div>
+                  <h2 className="mb-2 font-heading text-2xl font-bold">Оплата Plus</h2>
+                  <p className="text-muted-foreground">
+                    <span className="text-2xl font-bold text-foreground">{getCurrentPlanPrice()}₽</span>
+                    <span className="text-sm">/{billingPeriod === 'monthly' ? 'мес' : 'год'}</span>
+                  </p>
+                </div>
+
+                <h3 className="text-lg font-semibold mb-4 text-center">Выберите способ оплаты</h3>
+                
+                <div className="space-y-3">
+                  {paymentMethods.map((method) => (
+                    <div
+                      key={method.id}
+                      className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card/50 cursor-default"
+                    >
+                      <div className="flex-shrink-0">
+                        {method.logo}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium">{method.name}</p>
+                        <p className="text-sm text-muted-foreground">{method.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-border">
+                  <button
+                    onClick={() => setShowSupportModal(true)}
+                    className="flex items-center justify-center gap-2 w-full text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                    По всем вопросам к Технической Поддержке
+                  </button>
+                </div>
+              </div>
+
+              <SupportModal
+                isOpen={showSupportModal}
+                onClose={() => setShowSupportModal(false)}
+              />
+            </>
+          ) : (
+            <>
           {/* Header */}
           <div className="mb-6 text-center">
             <h2 className="mb-2 font-heading text-2xl font-bold">Выберите тариф</h2>
@@ -375,7 +509,7 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
 
                 <div className="flex justify-center">
                   <Button
-                    onClick={() => plan.id === 'plus' ? handlePayment(plan.id) : null}
+                    onClick={() => handleSelectPlan(plan.id)}
                     className="w-full"
                     variant={plan.id === 'free' ? 'secondary' : 'default'}
                     disabled={plan.id === 'free' || plan.id === 'premium'}
@@ -447,7 +581,7 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
 
                   <div className="flex justify-center">
                     <Button
-                      onClick={() => plan.id === 'plus' ? handlePayment(plan.id) : null}
+                      onClick={() => handleSelectPlan(plan.id)}
                       className="w-full"
                       variant={plan.id === 'free' ? 'secondary' : 'default'}
                       disabled={plan.id === 'free' || plan.id === 'premium'}
@@ -485,6 +619,8 @@ export function PremiumModal({ isOpen, onClose }: PremiumModalProps) {
           >
             Подробная информация о тарифах доступна в нашем Telegram-канале
           </a>
+            </>
+          )}
         </div>
       </div>
     </div>
