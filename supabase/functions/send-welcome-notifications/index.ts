@@ -78,16 +78,24 @@ Deno.serve(async (req) => {
     const { data: settings } = await supabase
       .from('admin_settings')
       .select('key, value')
-      .in('key', ['welcome_message_text', 'welcome_message_media_url', 'welcome_message_media_type', 'welcome_message_delay_minutes']);
+      .in('key', ['welcome_message_text', 'welcome_message_media_url', 'welcome_message_media_type', 'welcome_message_delay_minutes', 'welcome_message_enabled']);
 
     const settingsMap: Record<string, string> = {};
     settings?.forEach(s => {
       if (s.value) settingsMap[s.key] = s.value;
     });
 
+    const isEnabled = settingsMap['welcome_message_enabled'] !== 'false';
     const messageText = settingsMap['welcome_message_text'];
     const mediaUrl = settingsMap['welcome_message_media_url'];
     const mediaType = settingsMap['welcome_message_media_type'];
+
+    if (!isEnabled) {
+      console.log('Welcome message is disabled');
+      return new Response(JSON.stringify({ sent: 0, message: 'Welcome message disabled' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!messageText) {
       console.log('No welcome message configured');

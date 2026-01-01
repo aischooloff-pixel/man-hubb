@@ -3525,6 +3525,19 @@ async function handleCallbackQuery(callbackQuery: any) {
   } else if (action === 'products') {
     await answerCallbackQuery(callbackQuery.id);
     await handleProducts(message.chat.id, from.id, parseInt(param || '0'), message.message_id);
+  } else if (action === 'hi_edit') {
+    await handleHiEdit(callbackQuery);
+  } else if (action === 'hi_toggle') {
+    await handleHiToggle(callbackQuery);
+  } else if (action === 'hi_timer') {
+    await handleHiTimer(callbackQuery);
+  } else if (action === 'hi_set_timer') {
+    await handleHiSetTimer(callbackQuery, param);
+  } else if (action === 'hi_preview') {
+    await handleHiPreviewCallback(callbackQuery);
+  } else if (action === 'hi_back') {
+    await answerCallbackQuery(callbackQuery.id);
+    await handleHi(message.chat.id, from.id, message.message_id);
   }
 }
 
@@ -4002,15 +4015,15 @@ async function handleSearchReviews(chatId: number, userId: number, query: string
   }
 }
 
-// Handle /hi command - welcome message settings
-async function handleHi(chatId: number, userId: number) {
+// Handle /hi command - welcome message settings with inline buttons
+async function handleHi(chatId: number, userId: number, messageId?: number) {
   if (!isAdmin(userId)) return;
 
   // Get current settings
   const { data: settings } = await supabase
     .from('admin_settings')
     .select('key, value')
-    .in('key', ['welcome_message_text', 'welcome_message_media_url', 'welcome_message_media_type', 'welcome_message_delay_minutes']);
+    .in('key', ['welcome_message_text', 'welcome_message_media_url', 'welcome_message_media_type', 'welcome_message_delay_minutes', 'welcome_message_enabled']);
 
   const settingsMap: Record<string, string> = {};
   settings?.forEach(s => {
@@ -4019,140 +4032,153 @@ async function handleHi(chatId: number, userId: number) {
 
   const currentText = settingsMap['welcome_message_text'] || 'Не настроено';
   const currentDelay = settingsMap['welcome_message_delay_minutes'] || '15';
-  const currentMedia = settingsMap['welcome_message_media_url'] || 'Не настроено';
-  const currentMediaType = settingsMap['welcome_message_media_type'] || 'Не настроено';
+  const currentMedia = settingsMap['welcome_message_media_url'];
+  const currentMediaType = settingsMap['welcome_message_media_type'];
+  const isEnabled = settingsMap['welcome_message_enabled'] !== 'false';
 
-  const message = `👋 <b>Настройка приветственного сообщения</b>
+  const statusIcon = isEnabled ? '✅' : '❌';
+  const statusText = isEnabled ? 'Включено' : 'Выключено';
 
-Это сообщение отправляется новым пользователям через заданное время после первого запуска бота.
+  let message = `👋 <b>Приветственное сообщение</b>\n\n`;
+  message += `${statusIcon} <b>Статус:</b> ${statusText}\n`;
+  message += `⏱ <b>Отправка через:</b> ${currentDelay} мин\n`;
+  message += `🎬 <b>Медиа:</b> ${currentMedia ? `✅ (${currentMediaType})` : '❌ Нет'}\n\n`;
+  
+  message += `📝 <b>Текст сообщения:</b>\n`;
+  if (currentText !== 'Не настроено') {
+    message += `${currentText.substring(0, 300)}${currentText.length > 300 ? '...' : ''}`;
+  } else {
+    message += `<i>Не настроено</i>`;
+  }
 
-<b>Текущие настройки:</b>
-⏱ <b>Задержка:</b> ${currentDelay} мин
-📝 <b>Текст:</b>
-${currentText.substring(0, 200)}${currentText.length > 200 ? '...' : ''}
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '✏️ Изменить сообщение', callback_data: 'hi_edit' }],
+      [{ text: isEnabled ? '🔴 Выключить' : '🟢 Включить', callback_data: 'hi_toggle' }],
+      [{ text: `⏱ Таймер: ${currentDelay} мин`, callback_data: 'hi_timer' }],
+      [{ text: '👁 Предпросмотр', callback_data: 'hi_preview' }],
+    ],
+  };
 
-🎬 <b>Медиа:</b> ${currentMedia !== 'Не настроено' ? `✅ (${currentMediaType})` : '❌'}
-
-<b>Команды:</b>
-<code>/hi_text</code> — установить текст сообщения
-<code>/hi_delay [минуты]</code> — установить задержку
-<code>/hi_media [URL]</code> — добавить фото/видео
-<code>/hi_clear_media</code> — убрать медиа
-<code>/hi_preview</code> — предпросмотр
-
-<b>Форматирование текста:</b>
-• <code>&lt;b&gt;жирный&lt;/b&gt;</code> — <b>жирный</b>
-• <code>&lt;i&gt;курсив&lt;/i&gt;</code> — <i>курсив</i>
-• <code>&lt;u&gt;подчёркнутый&lt;/u&gt;</code> — <u>подчёркнутый</u>
-• <code>&lt;a href="URL"&gt;ссылка&lt;/a&gt;</code> — ссылка`;
-
-  await sendAdminMessage(chatId, message);
+  if (messageId) {
+    await editAdminMessage(chatId, messageId, message, { reply_markup: keyboard });
+  } else {
+    await sendAdminMessage(chatId, message, { reply_markup: keyboard });
+  }
 }
 
-// Handle /hi_text command - set welcome message text
-async function handleHiText(chatId: number, userId: number) {
-  if (!isAdmin(userId)) return;
+// Handle hi_edit callback - edit welcome message
+async function handleHiEdit(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
+  await answerCallbackQuery(id);
 
-  await sendAdminMessage(chatId, `📝 <b>Установка текста приветствия</b>
+  const msg = `✏️ <b>Редактирование приветствия</b>
 
-Отправьте следующим сообщением текст приветственного сообщения.
+Отправьте новое сообщение. Можно использовать:
 
 <b>Форматирование:</b>
 • <code>&lt;b&gt;жирный&lt;/b&gt;</code>
 • <code>&lt;i&gt;курсив&lt;/i&gt;</code>
-• <code>&lt;a href="https://t.me/Man_HubRu"&gt;наш канал&lt;/a&gt;</code>
+• <code>&lt;u&gt;подчёркнутый&lt;/u&gt;</code>
+• <code>&lt;a href="URL"&gt;текст ссылки&lt;/a&gt;</code>
 
-<i>Следующее ваше сообщение будет сохранено как текст приветствия.</i>`);
+<b>Медиа:</b>
+Отправьте фото или видео вместе с текстом, либо прикрепите URL к медиа командой:
+<code>/hi_media URL</code>
+
+Или отправьте <code>/hi_clear_media</code> чтобы убрать медиа.`;
+
+  await sendAdminMessage(message.chat.id, msg, {
+    reply_markup: {
+      inline_keyboard: [[{ text: '◀️ Назад', callback_data: 'hi_back' }]],
+    },
+  });
 
   // Set pending mode
   await supabase.from('admin_settings').upsert({
-    key: `hi_text_pending_${userId}`,
+    key: `hi_text_pending_${from.id}`,
     value: 'active',
   }, { onConflict: 'key' });
 }
 
-// Handle /hi_delay command
-async function handleHiDelay(chatId: number, userId: number, args: string) {
-  if (!isAdmin(userId)) return;
+// Handle hi_toggle callback - enable/disable welcome message
+async function handleHiToggle(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
 
-  if (!args) {
-    await sendAdminMessage(chatId, `⏱ <b>Задержка приветственного сообщения</b>
+  // Get current state
+  const { data } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', 'welcome_message_enabled')
+    .maybeSingle();
 
-Используйте:
-<code>/hi_delay [минуты]</code>
+  const isCurrentlyEnabled = data?.value !== 'false';
+  const newState = isCurrentlyEnabled ? 'false' : 'true';
 
-Примеры:
-<code>/hi_delay 15</code> — 15 минут (по умолчанию)
-<code>/hi_delay 60</code> — 1 час
-<code>/hi_delay 1440</code> — 24 часа`);
-    return;
-  }
+  await supabase.from('admin_settings').upsert({
+    key: 'welcome_message_enabled',
+    value: newState,
+  }, { onConflict: 'key' });
 
-  const minutes = parseInt(args);
-  if (isNaN(minutes) || minutes < 1) {
-    await sendAdminMessage(chatId, '❌ Укажите корректное количество минут (минимум 1)');
-    return;
-  }
+  await answerCallbackQuery(id, newState === 'true' ? '✅ Включено' : '❌ Выключено');
+  await handleHi(message.chat.id, from.id, message.message_id);
+}
+
+// Handle hi_timer callback - show timer options
+async function handleHiTimer(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
+  await answerCallbackQuery(id);
+
+  const { data } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', 'welcome_message_delay_minutes')
+    .maybeSingle();
+
+  const currentDelay = data?.value || '15';
+
+  const msg = `⏱ <b>Настройка таймера</b>
+
+Текущая задержка: <b>${currentDelay} мин</b>
+
+Через сколько минут после запуска бота отправлять приветствие?`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '5 мин', callback_data: 'hi_set_timer:5' },
+        { text: '10 мин', callback_data: 'hi_set_timer:10' },
+        { text: '15 мин', callback_data: 'hi_set_timer:15' },
+      ],
+      [
+        { text: '30 мин', callback_data: 'hi_set_timer:30' },
+        { text: '60 мин', callback_data: 'hi_set_timer:60' },
+        { text: '120 мин', callback_data: 'hi_set_timer:120' },
+      ],
+      [{ text: '◀️ Назад', callback_data: 'hi_back' }],
+    ],
+  };
+
+  await editAdminMessage(message.chat.id, message.message_id, msg, { reply_markup: keyboard });
+}
+
+// Handle hi_set_timer callback
+async function handleHiSetTimer(callbackQuery: any, minutes: string) {
+  const { id, message, from } = callbackQuery;
 
   await supabase.from('admin_settings').upsert({
     key: 'welcome_message_delay_minutes',
-    value: minutes.toString(),
+    value: minutes,
   }, { onConflict: 'key' });
 
-  await sendAdminMessage(chatId, `✅ Задержка установлена: <b>${minutes} мин</b>`);
+  await answerCallbackQuery(id, `✅ Таймер: ${minutes} мин`);
+  await handleHi(message.chat.id, from.id, message.message_id);
 }
 
-// Handle /hi_media command
-async function handleHiMedia(chatId: number, userId: number, args: string) {
-  if (!isAdmin(userId)) return;
-
-  if (!args) {
-    await sendAdminMessage(chatId, `🎬 <b>Медиа для приветствия</b>
-
-Используйте:
-<code>/hi_media [URL]</code>
-
-Поддерживаются прямые ссылки на изображения и видео.
-
-Примеры:
-<code>/hi_media https://example.com/image.jpg</code>
-<code>/hi_media https://example.com/video.mp4</code>`);
-    return;
-  }
-
-  // Determine media type
-  const url = args.trim();
-  let mediaType = 'photo';
-  if (url.includes('.mp4') || url.includes('.mov') || url.includes('video')) {
-    mediaType = 'video';
-  }
-
-  await supabase.from('admin_settings').upsert({
-    key: 'welcome_message_media_url',
-    value: url,
-  }, { onConflict: 'key' });
-
-  await supabase.from('admin_settings').upsert({
-    key: 'welcome_message_media_type',
-    value: mediaType,
-  }, { onConflict: 'key' });
-
-  await sendAdminMessage(chatId, `✅ Медиа добавлено: <b>${mediaType}</b>\n\n🔗 ${url}`);
-}
-
-// Handle /hi_clear_media command
-async function handleHiClearMedia(chatId: number, userId: number) {
-  if (!isAdmin(userId)) return;
-
-  await supabase.from('admin_settings').delete().eq('key', 'welcome_message_media_url');
-  await supabase.from('admin_settings').delete().eq('key', 'welcome_message_media_type');
-
-  await sendAdminMessage(chatId, '✅ Медиа удалено');
-}
-
-// Handle /hi_preview command
-async function handleHiPreview(chatId: number, userId: number) {
-  if (!isAdmin(userId)) return;
+// Handle hi_preview callback
+async function handleHiPreviewCallback(callbackQuery: any) {
+  const { id, message } = callbackQuery;
+  await answerCallbackQuery(id);
 
   // Get current settings
   const { data: settings } = await supabase
@@ -4171,11 +4197,11 @@ async function handleHiPreview(chatId: number, userId: number) {
   const delay = settingsMap['welcome_message_delay_minutes'] || '15';
 
   if (!messageText) {
-    await sendAdminMessage(chatId, '❌ Текст приветствия не настроен. Используйте /hi_text');
+    await sendAdminMessage(message.chat.id, '❌ Текст приветствия не настроен. Нажмите "Изменить сообщение".');
     return;
   }
 
-  await sendAdminMessage(chatId, `👁 <b>Предпросмотр</b> (отправляется через ${delay} мин):\n\n---`);
+  await sendAdminMessage(message.chat.id, `👁 <b>Предпросмотр</b> (отправляется через ${delay} мин):\n\n---`);
 
   if (mediaUrl && mediaType) {
     if (mediaType === 'photo') {
@@ -4184,7 +4210,7 @@ async function handleHiPreview(chatId: number, userId: number) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: message.chat.id,
           photo: mediaUrl,
           caption: messageText,
           parse_mode: 'HTML',
@@ -4196,7 +4222,7 @@ async function handleHiPreview(chatId: number, userId: number) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: message.chat.id,
           video: mediaUrl,
           caption: messageText,
           parse_mode: 'HTML',
@@ -4204,8 +4230,51 @@ async function handleHiPreview(chatId: number, userId: number) {
       });
     }
   } else {
-    await sendAdminMessage(chatId, messageText);
+    await sendAdminMessage(message.chat.id, messageText);
   }
+}
+
+// Handle /hi_media command
+async function handleHiMedia(chatId: number, userId: number, args: string) {
+  if (!isAdmin(userId)) return;
+
+  if (!args) {
+    await sendAdminMessage(chatId, `🎬 <b>Медиа для приветствия</b>
+
+Используйте:
+<code>/hi_media [URL]</code>
+
+Поддерживаются прямые ссылки на изображения и видео.`);
+    return;
+  }
+
+  const url = args.trim();
+  let mediaType = 'photo';
+  if (url.includes('.mp4') || url.includes('.mov') || url.includes('video')) {
+    mediaType = 'video';
+  }
+
+  await supabase.from('admin_settings').upsert({
+    key: 'welcome_message_media_url',
+    value: url,
+  }, { onConflict: 'key' });
+
+  await supabase.from('admin_settings').upsert({
+    key: 'welcome_message_media_type',
+    value: mediaType,
+  }, { onConflict: 'key' });
+
+  await sendAdminMessage(chatId, `✅ Медиа добавлено: <b>${mediaType}</b>`);
+}
+
+// Handle /hi_clear_media command
+async function handleHiClearMedia(chatId: number, userId: number) {
+  if (!isAdmin(userId)) return;
+
+  await supabase.from('admin_settings').delete().eq('key', 'welcome_message_media_url');
+  await supabase.from('admin_settings').delete().eq('key', 'welcome_message_media_type');
+
+  await sendAdminMessage(chatId, '✅ Медиа удалено');
 }
 
 // Handle pending hi text input
@@ -4401,13 +4470,6 @@ Deno.serve(async (req) => {
         await handleSearchProduct(chat.id, from.id, '');
       } else if (text === '/hi') {
         await handleHi(chat.id, from.id);
-      } else if (text === '/hi_text') {
-        await handleHiText(chat.id, from.id);
-      } else if (text?.startsWith('/hi_delay ')) {
-        const args = text.replace('/hi_delay ', '').trim();
-        await handleHiDelay(chat.id, from.id, args);
-      } else if (text === '/hi_delay') {
-        await handleHiDelay(chat.id, from.id, '');
       } else if (text?.startsWith('/hi_media ')) {
         const args = text.replace('/hi_media ', '').trim();
         await handleHiMedia(chat.id, from.id, args);
@@ -4415,8 +4477,6 @@ Deno.serve(async (req) => {
         await handleHiMedia(chat.id, from.id, '');
       } else if (text === '/hi_clear_media') {
         await handleHiClearMedia(chat.id, from.id);
-      } else if (text === '/hi_preview') {
-        await handleHiPreview(chat.id, from.id);
       } else if (text === '/help') {
         await handleStart(chat.id, from.id);
       } else {
