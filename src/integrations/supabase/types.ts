@@ -982,6 +982,41 @@ export type Database = {
           },
         ]
       }
+      user_badges: {
+        Row: {
+          badge: Database["public"]["Enums"]["badge_type"]
+          granted_at: string
+          granted_by_telegram_id: number | null
+          id: string
+          is_manual: boolean
+          user_profile_id: string
+        }
+        Insert: {
+          badge: Database["public"]["Enums"]["badge_type"]
+          granted_at?: string
+          granted_by_telegram_id?: number | null
+          id?: string
+          is_manual?: boolean
+          user_profile_id: string
+        }
+        Update: {
+          badge?: Database["public"]["Enums"]["badge_type"]
+          granted_at?: string
+          granted_by_telegram_id?: number | null
+          id?: string
+          is_manual?: boolean
+          user_profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_badges_user_profile_id_fkey"
+            columns: ["user_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_products: {
         Row: {
           created_at: string
@@ -1130,6 +1165,14 @@ export type Database = {
       generate_product_code: { Args: never; Returns: string }
       generate_referral_code: { Args: never; Returns: string }
       generate_short_id: { Args: never; Returns: string }
+      get_badge_display: {
+        Args: { p_badge: Database["public"]["Enums"]["badge_type"] }
+        Returns: {
+          emoji: string
+          name: string
+          priority: number
+        }[]
+      }
       get_or_create_short_id: {
         Args: { p_article_id: string }
         Returns: string
@@ -1141,9 +1184,26 @@ export type Database = {
         }
         Returns: boolean
       }
+      recalculate_user_badges: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      badge_type:
+        | "author"
+        | "experienced_author"
+        | "legend"
+        | "man"
+        | "expert"
+        | "sage"
+        | "partner"
+        | "founder"
+        | "moderator_badge"
+        | "referrer"
+        | "hustler"
+        | "ambassador"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1272,6 +1332,20 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      badge_type: [
+        "author",
+        "experienced_author",
+        "legend",
+        "man",
+        "expert",
+        "sage",
+        "partner",
+        "founder",
+        "moderator_badge",
+        "referrer",
+        "hustler",
+        "ambassador",
+      ],
     },
   },
 } as const

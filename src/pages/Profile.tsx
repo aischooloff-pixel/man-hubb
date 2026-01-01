@@ -12,6 +12,7 @@ import { SocialLinksModal } from '@/components/profile/SocialLinksModal';
 import { SupportModal } from '@/components/profile/SupportModal';
 import { ProductsModal } from '@/components/profile/ProductsModal';
 import { ReferralModal } from '@/components/profile/ReferralModal';
+import { UserBadges } from '@/components/profile/UserBadges';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -309,8 +310,19 @@ export default function Profile() {
               )}
             </div>
             <div className="flex-1">
-              <h1 className="font-heading text-xl font-bold">{displayName}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-heading text-xl font-bold">{displayName}</h1>
+                {profile.id && <UserBadges userProfileId={profile.id} variant="inline" />}
+              </div>
               <p className="text-sm text-muted-foreground">@{displayUsername}</p>
+              
+              {/* Badges row */}
+              {profile.id && (
+                <div className="mt-2">
+                  <UserBadges userProfileId={profile.id} variant="full" />
+                </div>
+              )}
+              
               <div className="mt-2 flex items-center gap-4">
                 <button
                   onClick={() => setIsRepHistoryOpen(true)}

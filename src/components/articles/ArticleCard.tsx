@@ -2,6 +2,7 @@ import { Heart, MessageCircle, Bookmark, TrendingUp, Share2, Crown } from 'lucid
 import { Article } from '@/types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AuthorBadge } from '@/components/profile/UserBadges';
 
 interface ArticleCardProps {
   article: Article;
@@ -55,6 +56,7 @@ export function ArticleCard({ article, variant = 'default', className, style, on
                 <span className="text-xs text-muted-foreground">
                   {author.first_name}
                 </span>
+                {author.id && <AuthorBadge userProfileId={author.id} className="text-xs" />}
                 {author.is_premium && (
                   <Crown className="h-4 w-4 text-yellow-500" />
                 )}
@@ -170,6 +172,7 @@ export function ArticleCard({ article, variant = 'default', className, style, on
               <div>
                 <span className="flex items-center gap-1.5 text-sm font-medium">
                   {author.first_name} {author.last_name}
+                  {author.id && <AuthorBadge userProfileId={author.id} className="text-sm" />}
                   {author.is_premium && (
                     <Crown className="h-4 w-4 text-yellow-500" />
                   )}

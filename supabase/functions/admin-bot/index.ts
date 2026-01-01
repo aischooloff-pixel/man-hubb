@@ -423,13 +423,54 @@ async function handleUserProfile(callbackQuery: any, telegramId: string) {
 ├ 💰 Заработано: ${user.referral_earnings || 0} ₽
 └ 🔗 Ссылка: <code>${referralLink}</code>`;
 
+  // Get user badges
+  const { data: userBadges } = await supabase
+    .from('user_badges')
+    .select('badge, is_manual')
+    .eq('user_profile_id', user.id);
+
+  const badgeEmojis: Record<string, string> = {
+    founder: '👑',
+    moderator_badge: '🛡️',
+    partner: '🤝',
+    legend: '🏆',
+    sage: '🧙',
+    ambassador: '🌟',
+    experienced_author: '✍️',
+    expert: '🎓',
+    hustler: '🔥',
+    author: '📝',
+    man: '💪',
+    referrer: '👥',
+  };
+
+  const badgeNames: Record<string, string> = {
+    founder: 'Основатель',
+    moderator_badge: 'Модератор',
+    partner: 'Партнёр',
+    legend: 'Легенда',
+    sage: 'Мудрец',
+    ambassador: 'Амбассадор',
+    experienced_author: 'Опытный автор',
+    expert: 'Эксперт',
+    hustler: 'Хастлер',
+    author: 'Автор',
+    man: 'Мужчина',
+    referrer: 'Рефер',
+  };
+
+  const badgesDisplay = userBadges && userBadges.length > 0
+    ? userBadges.map((b: any) => `${badgeEmojis[b.badge] || '🏅'} ${badgeNames[b.badge] || b.badge}`).join(', ')
+    : '❌ Нет';
+
   const profileMessage = `👤 <b>Профиль пользователя</b>${blocked}
 
 📛 <b>Имя:</b> ${user.first_name || ''} ${user.last_name || ''}
 🔗 <b>Username:</b> ${user.username ? `@${user.username}` : 'Не указан'}
 🆔 <b>Telegram ID:</b> ${user.telegram_id}
 ⭐ <b>Репутация:</b> ${user.reputation || 0}
-📊 <b>Подписка:</b> ${tierLabel}${premiumExpiry}${productInfo}${referralInfo}
+📊 <b>Подписка:</b> ${tierLabel}${premiumExpiry}
+🏅 <b>Значки:</b> ${badgesDisplay}${productInfo}${referralInfo}
 📅 <b>Регистрация:</b> ${new Date(user.created_at).toLocaleDateString('ru-RU')}`;
 
   // Build action buttons
@@ -455,6 +496,9 @@ async function handleUserProfile(callbackQuery: any, telegramId: string) {
     ]);
   }
 
+  // Badge management button
+  buttons.push([{ text: '🏅 Управление значками', callback_data: `badge_menu:${user.telegram_id}` }]);
+
   // Referral management buttons
   buttons.push([
     { text: '💰 +Баланс', callback_data: `ref_add_balance:${user.telegram_id}` },
@@ -478,6 +522,135 @@ async function handleUserProfile(callbackQuery: any, telegramId: string) {
 
   await answerCallbackQuery(id);
   await editAdminMessage(message.chat.id, message.message_id, profileMessage, { reply_markup: keyboard });
+}
+
+// Badge menu for user
+async function handleBadgeMenu(callbackQuery: any, telegramId: string) {
+  const { id, message } = callbackQuery;
+
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('id, first_name, username')
+    .eq('telegram_id', telegramId)
+    .maybeSingle();
+
+  if (!user) {
+    await answerCallbackQuery(id, '❌ Пользователь не найден');
+    return;
+  }
+
+  // Get current badges
+  const { data: currentBadges } = await supabase
+    .from('user_badges')
+    .select('badge')
+    .eq('user_profile_id', user.id);
+
+  const hasBadge = (badge: string) => currentBadges?.some((b: any) => b.badge === badge);
+
+  // Manual badges that can be granted/revoked
+  const manualBadges = [
+    { key: 'founder', name: '👑 Основатель' },
+    { key: 'moderator_badge', name: '🛡️ Модератор' },
+    { key: 'partner', name: '🤝 Партнёр' },
+    { key: 'sage', name: '🧙 Мудрец (1000 RP)' },
+  ];
+
+  const userName = user.username ? `@${user.username}` : user.first_name || `ID:${telegramId}`;
+
+  const text = `🏅 <b>Управление значками</b>
+👤 ${userName}
+
+Нажмите на значок для выдачи/отзыва:`;
+
+  const buttons: any[][] = [];
+  
+  for (const badge of manualBadges) {
+    const has = hasBadge(badge.key);
+    buttons.push([{
+      text: `${has ? '✅' : '❌'} ${badge.name}`,
+      callback_data: has ? `badge_revoke:${telegramId}:${badge.key}` : `badge_grant:${telegramId}:${badge.key}`
+    }]);
+  }
+
+  buttons.push([{ text: '◀️ Назад к профилю', callback_data: `user:${telegramId}` }]);
+
+  await answerCallbackQuery(id);
+  await editAdminMessage(message.chat.id, message.message_id, text, { 
+    reply_markup: { inline_keyboard: buttons } 
+  });
+}
+
+// Grant a manual badge
+async function handleBadgeGrant(callbackQuery: any, telegramId: string, badgeType: string) {
+  const { id, message, from } = callbackQuery;
+
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', telegramId)
+    .maybeSingle();
+
+  if (!user) {
+    await answerCallbackQuery(id, '❌ Пользователь не найден');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('user_badges')
+    .insert({
+      user_profile_id: user.id,
+      badge: badgeType,
+      is_manual: true,
+      granted_by_telegram_id: from.id,
+    });
+
+  if (error) {
+    if (error.code === '23505') {
+      await answerCallbackQuery(id, '⚠️ Значок уже выдан');
+    } else {
+      console.error('Error granting badge:', error);
+      await answerCallbackQuery(id, '❌ Ошибка выдачи значка');
+    }
+    return;
+  }
+
+  await answerCallbackQuery(id, '✅ Значок выдан');
+  
+  // Refresh badge menu
+  await handleBadgeMenu(callbackQuery, telegramId);
+}
+
+// Revoke a manual badge
+async function handleBadgeRevoke(callbackQuery: any, telegramId: string, badgeType: string) {
+  const { id } = callbackQuery;
+
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', telegramId)
+    .maybeSingle();
+
+  if (!user) {
+    await answerCallbackQuery(id, '❌ Пользователь не найден');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('user_badges')
+    .delete()
+    .eq('user_profile_id', user.id)
+    .eq('badge', badgeType);
+
+  if (error) {
+    console.error('Error revoking badge:', error);
+    await answerCallbackQuery(id, '❌ Ошибка удаления значка');
+    return;
+  }
+
+  await answerCallbackQuery(id, '✅ Значок удалён');
+  
+  // Refresh badge menu
+  await handleBadgeMenu(callbackQuery, telegramId);
 }
 
 // Handle /search command
@@ -4443,6 +4616,12 @@ async function handleCallbackQuery(callbackQuery: any) {
     await handleBroadcastConfirm(callbackQuery);
   } else if (action === 'broadcast_cancel') {
     await handleBroadcastCancel(callbackQuery);
+  } else if (action === 'badge_menu') {
+    await handleBadgeMenu(callbackQuery, param);
+  } else if (action === 'badge_grant') {
+    await handleBadgeGrant(callbackQuery, param, param2);
+  } else if (action === 'badge_revoke') {
+    await handleBadgeRevoke(callbackQuery, param, param2);
   }
 }
 
