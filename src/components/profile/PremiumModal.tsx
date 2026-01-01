@@ -73,26 +73,17 @@ export function PremiumModal({ isOpen, onClose, telegramId: propTelegramId }: Pr
         const premiumData = data.find(p => p.tier === 'premium');
         
         if (plusData && premiumData) {
-          const discount = plusData.discount_percent / 100;
-          const yearlyDiscount = plusData.yearly_discount_percent / 100;
-          
-          // Calculate discounted prices from original prices
-          const plusMonthlyDiscounted = Math.round(plusData.monthly_original_price * (1 - discount));
-          const plusYearlyDiscounted = Math.round(plusData.yearly_original_price * (1 - discount) * (1 - yearlyDiscount));
-          
-          const premiumMonthlyDiscounted = Math.round(premiumData.monthly_original_price * (1 - discount));
-          const premiumYearlyDiscounted = Math.round(premiumData.yearly_original_price * (1 - discount) * (1 - yearlyDiscount));
-          
+          // Use prices directly from DB - they are already set by admin
           setPricing({
             plus: {
-              monthly: plusMonthlyDiscounted,
-              yearly: plusYearlyDiscounted,
+              monthly: plusData.monthly_price,
+              yearly: plusData.yearly_price,
               monthlyOriginal: plusData.monthly_original_price,
               yearlyOriginal: plusData.yearly_original_price,
             },
             premium: {
-              monthly: premiumMonthlyDiscounted,
-              yearly: premiumYearlyDiscounted,
+              monthly: premiumData.monthly_price,
+              yearly: premiumData.yearly_price,
               monthlyOriginal: premiumData.monthly_original_price,
               yearlyOriginal: premiumData.yearly_original_price,
             },
