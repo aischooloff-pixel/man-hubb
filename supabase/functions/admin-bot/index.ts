@@ -70,6 +70,80 @@ async function sendUserMessage(chatId: string | number, text: string) {
   return response.json();
 }
 
+// Send photo to user via User Bot
+async function sendUserPhoto(chatId: string | number, photoId: string, caption?: string) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoId,
+      caption,
+      parse_mode: 'HTML',
+    }),
+  });
+  
+  return response.json();
+}
+
+// Send video to user via User Bot
+async function sendUserVideo(chatId: string | number, videoId: string, caption?: string) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoId,
+      caption,
+      parse_mode: 'HTML',
+    }),
+  });
+  
+  return response.json();
+}
+
+// Send photo via Admin Bot
+async function sendAdminPhoto(chatId: string | number, photoId: string, caption?: string, options: any = {}) {
+  const url = `https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendPhoto`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoId,
+      caption,
+      parse_mode: 'HTML',
+      ...options,
+    }),
+  });
+  
+  return response.json();
+}
+
+// Send video via Admin Bot
+async function sendAdminVideo(chatId: string | number, videoId: string, caption?: string, options: any = {}) {
+  const url = `https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendVideo`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoId,
+      caption,
+      parse_mode: 'HTML',
+      ...options,
+    }),
+  });
+  
+  return response.json();
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   const url = `https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/answerCallbackQuery`;
   
@@ -2620,48 +2694,225 @@ async function handlePlaylistDelete(callbackQuery: any, playlistIdPrefix: string
 }
 
 
-async function handleBroadcast(chatId: number, userId: number, text?: string) {
+async function handleBroadcast(chatId: number, userId: number) {
   if (!isAdmin(userId)) return;
 
-  if (!text || text === '/broadcast') {
-    await sendAdminMessage(chatId, `📢 <b>Рассылка</b>
+  // Start broadcast wizard - save state
+  await supabase.from('admin_settings').upsert({
+    key: `pending_broadcast_${userId}`,
+    value: JSON.stringify({ step: 'text' }),
+  });
 
-Чтобы отправить сообщение всем пользователям, используйте:
+  await sendAdminMessage(chatId, `📢 <b>Рассылка</b>
 
-<code>/broadcast Текст сообщения</code>
+<b>Шаг 1/3:</b> Отправьте текст сообщения для рассылки.
 
-Пример:
-<code>/broadcast Привет! У нас новый функционал!</code>`);
+<i>Поддерживается HTML-разметка.</i>
+
+Для отмены используйте /cancel`);
+}
+
+// Handle broadcast text input
+async function handleBroadcastTextInput(chatId: number, userId: number, text: string): Promise<boolean> {
+  const { data: pending } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', `pending_broadcast_${userId}`)
+    .maybeSingle();
+
+  if (!pending) return false;
+
+  let state;
+  try {
+    state = JSON.parse(pending.value || '{}');
+  } catch {
+    return false;
+  }
+
+  if (state.step !== 'text') return false;
+
+  // Save text and move to media step
+  await supabase.from('admin_settings').upsert({
+    key: `pending_broadcast_${userId}`,
+    value: JSON.stringify({ step: 'media', text: text }),
+  });
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '⏭ Пропустить (только текст)', callback_data: 'broadcast_skip_media' }],
+      [{ text: '❌ Отменить', callback_data: 'broadcast_cancel' }],
+    ],
+  };
+
+  await sendAdminMessage(chatId, `✅ Текст сохранён!
+
+<b>Шаг 2/3:</b> Отправьте фото или видео для рассылки.
+
+Или нажмите «Пропустить», чтобы отправить только текст.`, { reply_markup: keyboard });
+
+  return true;
+}
+
+// Handle broadcast media input
+async function handleBroadcastMediaInput(chatId: number, userId: number, message: any): Promise<boolean> {
+  const { data: pending } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', `pending_broadcast_${userId}`)
+    .maybeSingle();
+
+  if (!pending) return false;
+
+  let state;
+  try {
+    state = JSON.parse(pending.value || '{}');
+  } catch {
+    return false;
+  }
+
+  if (state.step !== 'media') return false;
+
+  let mediaId = '';
+  let mediaType = '';
+
+  if (message.photo && message.photo.length > 0) {
+    // Get largest photo
+    mediaId = message.photo[message.photo.length - 1].file_id;
+    mediaType = 'photo';
+  } else if (message.video) {
+    mediaId = message.video.file_id;
+    mediaType = 'video';
+  } else {
+    await sendAdminMessage(chatId, '❌ Пожалуйста, отправьте фото или видео');
+    return true;
+  }
+
+  // Save media and show preview
+  await supabase.from('admin_settings').upsert({
+    key: `pending_broadcast_${userId}`,
+    value: JSON.stringify({ ...state, step: 'preview', media_id: mediaId, media_type: mediaType }),
+  });
+
+  await showBroadcastPreview(chatId, userId, state.text, mediaId, mediaType);
+  return true;
+}
+
+// Show broadcast preview
+async function showBroadcastPreview(chatId: number, userId: number, text: string, mediaId?: string, mediaType?: string) {
+  const previewText = `📢 <b>Объявление от ManHub</b>\n\n${text}`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '✅ Отправить всем', callback_data: 'broadcast_confirm' }],
+      [{ text: '❌ Отменить', callback_data: 'broadcast_cancel' }],
+    ],
+  };
+
+  await sendAdminMessage(chatId, `👁 <b>Предварительный просмотр:</b>\n\n━━━━━━━━━━━━━━━━━━`);
+
+  if (mediaId && mediaType === 'photo') {
+    await sendAdminPhoto(chatId, mediaId, previewText);
+  } else if (mediaId && mediaType === 'video') {
+    await sendAdminVideo(chatId, mediaId, previewText);
+  } else {
+    await sendAdminMessage(chatId, previewText);
+  }
+
+  await sendAdminMessage(chatId, `━━━━━━━━━━━━━━━━━━\n\n<b>Шаг 3/3:</b> Подтвердите отправку.`, { reply_markup: keyboard });
+}
+
+// Handle broadcast skip media
+async function handleBroadcastSkipMedia(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
+
+  const { data: pending } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', `pending_broadcast_${from.id}`)
+    .maybeSingle();
+
+  if (!pending) {
+    await answerCallbackQuery(id, '❌ Сессия истекла');
     return;
   }
 
+  let state;
+  try {
+    state = JSON.parse(pending.value || '{}');
+  } catch {
+    await answerCallbackQuery(id, '❌ Ошибка');
+    return;
+  }
+
+  // Update state to preview without media
+  await supabase.from('admin_settings').upsert({
+    key: `pending_broadcast_${from.id}`,
+    value: JSON.stringify({ ...state, step: 'preview' }),
+  });
+
+  await answerCallbackQuery(id);
+  await showBroadcastPreview(message.chat.id, from.id, state.text);
+}
+
+// Handle broadcast confirm
+async function handleBroadcastConfirm(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
+
+  const { data: pending } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', `pending_broadcast_${from.id}`)
+    .maybeSingle();
+
+  if (!pending) {
+    await answerCallbackQuery(id, '❌ Сессия истекла');
+    return;
+  }
+
+  let state;
+  try {
+    state = JSON.parse(pending.value || '{}');
+  } catch {
+    await answerCallbackQuery(id, '❌ Ошибка');
+    return;
+  }
+
+  // Clear state
+  await supabase.from('admin_settings').delete().eq('key', `pending_broadcast_${from.id}`);
+
+  await answerCallbackQuery(id);
+  await editMessageReplyMarkup(message.chat.id, message.message_id);
+
+  // Get all users
   const { data: users, error } = await supabase
     .from('profiles')
     .select('telegram_id')
     .eq('is_blocked', false)
     .not('telegram_id', 'is', null);
 
-  if (error) {
-    console.error('Error fetching users:', error);
-    await sendAdminMessage(chatId, '❌ Ошибка при загрузке пользователей');
+  if (error || !users || users.length === 0) {
+    await sendAdminMessage(message.chat.id, '❌ Нет пользователей для рассылки');
     return;
   }
 
-  if (!users || users.length === 0) {
-    await sendAdminMessage(chatId, '❌ Нет пользователей для рассылки');
-    return;
-  }
+  await sendAdminMessage(message.chat.id, `📤 Отправка сообщения ${users.length} пользователям...`);
 
-  const broadcastText = text.replace('/broadcast ', '');
+  const broadcastText = `📢 <b>Объявление от ManHub</b>\n\n${state.text}`;
   let sent = 0;
   let failed = 0;
-
-  await sendAdminMessage(chatId, `📤 Отправка сообщения ${users.length} пользователям...`);
 
   for (const user of users) {
     if (user.telegram_id) {
       try {
-        const result = await sendUserMessage(user.telegram_id, `📢 <b>Объявление от BoysHub</b>\n\n${broadcastText}`);
+        let result;
+        if (state.media_id && state.media_type === 'photo') {
+          result = await sendUserPhoto(user.telegram_id, state.media_id, broadcastText);
+        } else if (state.media_id && state.media_type === 'video') {
+          result = await sendUserVideo(user.telegram_id, state.media_id, broadcastText);
+        } else {
+          result = await sendUserMessage(user.telegram_id, broadcastText);
+        }
+
         if (result.ok) {
           sent++;
         } else {
@@ -2673,10 +2924,21 @@ async function handleBroadcast(chatId: number, userId: number, text?: string) {
     }
   }
 
-  await sendAdminMessage(chatId, `✅ <b>Рассылка завершена</b>
+  await sendAdminMessage(message.chat.id, `✅ <b>Рассылка завершена</b>
 
 📤 Отправлено: ${sent}
 ❌ Не доставлено: ${failed}`);
+}
+
+// Handle broadcast cancel
+async function handleBroadcastCancel(callbackQuery: any) {
+  const { id, message, from } = callbackQuery;
+
+  await supabase.from('admin_settings').delete().eq('key', `pending_broadcast_${from.id}`);
+
+  await answerCallbackQuery(id, '❌ Рассылка отменена');
+  await editMessageReplyMarkup(message.chat.id, message.message_id);
+  await sendAdminMessage(message.chat.id, '❌ Рассылка отменена');
 }
 
 // Handle /questions command - show pending support questions with inline buttons
@@ -4019,6 +4281,12 @@ async function handleCallbackQuery(callbackQuery: any) {
     await handleResetReferralBalance(callbackQuery, param);
   } else if (action === 'ref_add_balance') {
     await handleAddBalanceStart(callbackQuery, param);
+  } else if (action === 'broadcast_skip_media') {
+    await handleBroadcastSkipMedia(callbackQuery);
+  } else if (action === 'broadcast_confirm') {
+    await handleBroadcastConfirm(callbackQuery);
+  } else if (action === 'broadcast_cancel') {
+    await handleBroadcastCancel(callbackQuery);
   }
 }
 
@@ -4895,8 +5163,14 @@ Deno.serve(async (req) => {
         return new Response('OK', { headers: corsHeaders });
       }
 
-      // FIRST: Check if this is a media upload for /hi command
+      // FIRST: Check if this is a media upload for /hi command or /broadcast
       if (photo || video || animation) {
+        // Check broadcast media first
+        const broadcastMediaHandled = await handleBroadcastMediaInput(chat.id, from.id, update.message);
+        if (broadcastMediaHandled) {
+          return new Response('OK', { headers: corsHeaders });
+        }
+        
         const mediaHandled = await handleHiMediaUpload(chat.id, from.id, update.message);
         if (mediaHandled) {
           return new Response('OK', { headers: corsHeaders });
@@ -4974,8 +5248,12 @@ Deno.serve(async (req) => {
         await handleSearchReviews(chat.id, from.id, query);
       } else if (text === '/search_otz') {
         await handleSearchReviews(chat.id, from.id, '');
-      } else if (text?.startsWith('/broadcast')) {
-        await handleBroadcast(chat.id, from.id, text);
+      } else if (text === '/broadcast') {
+        await handleBroadcast(chat.id, from.id);
+      } else if (text === '/cancel') {
+        // Cancel any pending operations
+        await supabase.from('admin_settings').delete().eq('key', `pending_broadcast_${from.id}`);
+        await sendAdminMessage(chat.id, '❌ Операция отменена');
       } else if (text === '/podc') {
         await handlePodcasts(chat.id, from.id);
       } else if (text === '/pl') {
@@ -5015,6 +5293,12 @@ Deno.serve(async (req) => {
         // FIRST: Check balance input for referral management
         const balanceHandled = await handleBalanceInput(chat.id, from.id, text);
         if (balanceHandled) {
+          return new Response('OK', { headers: corsHeaders });
+        }
+
+        // Check broadcast text input
+        const broadcastTextHandled = await handleBroadcastTextInput(chat.id, from.id, text);
+        if (broadcastTextHandled) {
           return new Response('OK', { headers: corsHeaders });
         }
 
